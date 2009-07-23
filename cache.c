@@ -34,7 +34,7 @@ main(int ac, char **av)
 	    steps = 0;
 	    do {
 		sec0 = timestamp();
-		for (i=0; i < SAMPLE; i++) {
+		for (i=SAMPLE*stride; i > 0; i--) {
 		    for (j=0; j < csize; j+=stride) {
 			x[j] += 1;
 		    }
@@ -46,7 +46,7 @@ main(int ac, char **av)
 	    tsteps = 0;
 	    do {
 		sec0 = timestamp();
-		for (i=0; i < SAMPLE; i++) {
+		for (i=SAMPLE*stride; i > 0; i--) {
 		    for (j=0; j < csize; j+=stride) {
 			temp += j;
 		    }
