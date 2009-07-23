@@ -58,7 +58,7 @@ main(int ac, char **av)
 		   stride,
 		   csize,
 		   (sec * 1000000000.0) /
-		   (SAMPLE * steps * (csize / stride)));
+		   (SAMPLE * stride * steps * (csize / stride)));
 	    fflush(stdout);
 	}
 	printf("\n");
