@@ -4,14 +4,14 @@
 #include <sys/types.h>
 
 #define	SAMPLE		10
-#define	CACHE_MIN	4 * 1024
-#define	CACHE_MAX	512 * 1024 * 1024
+#define	CACHE_MIN	1024
+#define	CACHE_MAX	256 * 1024 * 1024 /* 1 GB! */
 
-typedef u_int8_t	u8;
+typedef	u_int8_t	u8;
 typedef	u_int32_t	u32;
 typedef u_int64_t	u64;
 
-u8			x[CACHE_MAX];
+u32*	buffer[CACHE_MAX];
 
 double
 timestamp(void)
@@ -21,23 +21,53 @@ timestamp(void)
     return (tv.tv_sec + (tv.tv_usec/1000000.0));
 }
 
+u32 **
+shuffle(u32 **buffer, u32 stride, u32 max)
+{
+    int i, j, r, n, tmp;
+    int	*indices;
+
+    indices = calloc(max, sizeof(int));
+    if (indices == NULL) {
+	printf("not enough memory\n");
+	exit(1);
+    }
+    for (i = 0, j = 0; i < max; i+=stride, j++) indices[j] = i;
+/* shuffle it */
+     n = j;
+     while (n > 1) {
+	 n--;
+	 r = random() % n;
+	 tmp = indices[r];
+	 indices[r] = indices[n];
+	 indices[n] = tmp;
+     }
+/* build linked list */
+     for (i = 0; i < j-1; i++) {
+	 buffer[indices[i]] = (u32 *)&buffer[indices[i+1]];
+     }
+     buffer[indices[i]] = NULL;
+     free(indices);
+     return (&buffer[indices[0]]);
+}
+
 int
 main(int ac, char **av)
 {
     u32 register	i, j, k, stride, temp;
     u32	steps, limit, tsteps, csize;
     double	sec0, sec;
+    u32 **start, **p;
 
     for (csize=CACHE_MIN; csize <= CACHE_MAX; csize*=2) {
 	for (stride=1; stride <= csize; stride=stride*2) {
 	    sec = 0.0;
 	    steps = 0;
+	    start = shuffle(buffer, stride, csize);
 	    do {
 		sec0 = timestamp();
 		for (i=SAMPLE*stride; i > 0; i--) {
-		    for (j=0; j < csize; j+=stride) {
-			x[j] += 1;
-		    }
+		    for (p = start; p; p = (u32 **)*p) {}
 		}
 		steps++;
 		sec += timestamp() - sec0;
@@ -55,8 +85,8 @@ main(int ac, char **av)
 		sec -= timestamp() - sec0;
 	    } while (tsteps < steps);
 	    printf("%u\t%u\t%.1lf\n",
-		   stride,
-		   csize,
+		   stride * sizeof(u32),
+		   csize * sizeof(u32),
 		   (sec * 1000000000.0) /
 		   (SAMPLE * stride * steps * (csize / stride)));
 	    fflush(stdout);

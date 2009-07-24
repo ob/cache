@@ -15,12 +15,13 @@ set ylabel "Buffer Size (bytes)"
 set zlabel "Time (ns)"
 #set view 57,13
 set view 70,30
+#set view 46, 345
 set pm3d at s hidden3d 100
 set style line 100 lt 5 lw 0.5
 unset surf
 set log xy # add z to use log scale for time
-set log z
-splot "COLD4" with lines
+#set log z
+splot "OUT" with lines
 
 # Local Variables: **
 # mode: gnuplot **
