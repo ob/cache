@@ -21,7 +21,7 @@ set style line 100 lt 5 lw 0.5
 unset surf
 set log xy # add z to use log scale for time
 #set log z
-splot "OUT" with lines
+splot "TEST1" with lines
 
 # Local Variables: **
 # mode: gnuplot **

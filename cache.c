@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <sys/time.h>
 #include <sys/types.h>
 
@@ -25,12 +26,16 @@ u32 **
 shuffle(u32 **buffer, u32 stride, u32 max)
 {
     int i, j, r, n, tmp;
-    int	*indices;
+    static int	*indices = NULL;
 
-    indices = calloc(max, sizeof(int));
     if (indices == NULL) {
-	printf("not enough memory\n");
-	exit(1);
+	indices = calloc(CACHE_MAX, sizeof(int));
+	if (indices == NULL) {
+	    printf("not enough memory\n");
+	    exit(1);
+	}
+    } else {
+	bzero(indices, CACHE_MAX);
     }
     for (i = 0, j = 0; i < max; i+=stride, j++) indices[j] = i;
 /* shuffle it */
@@ -47,15 +52,14 @@ shuffle(u32 **buffer, u32 stride, u32 max)
 	 buffer[indices[i]] = (u32 *)&buffer[indices[i+1]];
      }
      buffer[indices[i]] = NULL;
-     free(indices);
      return (&buffer[indices[0]]);
 }
 
 int
 main(int ac, char **av)
 {
-    u32 register	i, j, k, stride, temp;
-    u32	steps, limit, tsteps, csize;
+    u32 register	i, stride;
+    u32	steps, csize;
     double	sec0, sec;
     u32 **start, **p;
 
@@ -73,18 +77,7 @@ main(int ac, char **av)
 		sec += timestamp() - sec0;
 	    } while (sec < 1.0);
 
-	    tsteps = 0;
-	    do {
-		sec0 = timestamp();
-		for (i=SAMPLE*stride; i > 0; i--) {
-		    for (j=0; j < csize; j+=stride) {
-			temp += j;
-		    }
-		}
-		tsteps++;
-		sec -= timestamp() - sec0;
-	    } while (tsteps < steps);
-	    printf("%u\t%u\t%.1lf\n",
+	    printf("%lu\t%lu\t%.1lf\n",
 		   stride * sizeof(u32),
 		   csize * sizeof(u32),
 		   (sec * 1000000000.0) /
@@ -94,6 +87,7 @@ main(int ac, char **av)
 	printf("\n");
 	fflush(stdout);
     }
+    return 0;
 }
 
 /*
