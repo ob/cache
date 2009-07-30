@@ -171,15 +171,17 @@ usage:	    fprintf(stderr, "usage: %s [--random|--sequential]\n", av[0]);
 		av[0], CACHE_MAX * sizeof(u32));
 	return (1);
     }
-    printf("# doing %s access with a max buffer of %ld\n",
-	   names[kind], cache_size * sizeof(u32));
     switch (kind) {
     case rand_access:
-	    random_access(cache_size);
-	    break;
+	printf("# doing random access with a max buffer of %ld\n",
+	       cache_size * sizeof(u32));
+	random_access(cache_size);
+	break;
     case seq_access:
-	    sequential_access(cache_size);
-	    break;
+	printf("# doing sequential access with a max buffer of %ld\n",
+	       cache_size * sizeof(u32));
+	sequential_access(cache_size);
+	break;
     default:
 	goto usage;
 	break;
