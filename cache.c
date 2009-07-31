@@ -22,8 +22,6 @@ static struct option longopts[] = {
 };
 
 typedef enum {rand_access, seq_access} access_kind;
-static char	*names[3] = {"random", "sequential", 0};
-
 
 u32*	buffer[CACHE_MAX];
 
@@ -97,7 +95,7 @@ random_access(u32 cache_max)
 		   sec*1e9/(steps*SAMPLE*stride*((limit-1)/stride+1)));
 	    fflush(stdout);
 	}
-	printf("\n");
+	printf("\n\n");
 	fflush(stdout);
     }
 }
@@ -131,7 +129,7 @@ sequential_access(u32 cache_max)
 		   sec*1e9/(steps*SAMPLE*stride*((limit-1)/stride+1)));
 	    fflush(stdout);
 	}
-	printf("\n");
+	printf("\n\n");
 	fflush(stdout);
     }
 }
@@ -156,7 +154,8 @@ main(int ac, char **av)
 	    cache_size = strtol(optarg, 0, 10) / sizeof(u32);
 	    break;
 	default:
-usage:	    fprintf(stderr, "usage: %s [--random|--sequential]\n", av[0]);
+usage:	    fprintf(stderr, "usage: %s (--random|--sequential) "
+		    "[--buffer <size>]\n", av[0]);
 	    return (1);
 	    break;
 	}
