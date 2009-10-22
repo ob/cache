@@ -24,7 +24,7 @@ set log xy # add z to use log scale for time
 #set log z
 set lmargin 8
 set title "Cache Latency (Linux - Sequential)"
-splot "< cat -s LINUX_SEQ_REBOOT" with lines
+splot "< cat -s KNOPPIX_RAND_DIRAC" with lines
 
 # Local Variables: **
 # mode: gnuplot **

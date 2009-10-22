@@ -1,6 +1,8 @@
-#set term x11
+set term aqua
 set ticslevel 0
 set xrange [] reverse
+set zrange [0:140]
+set cbrange [0:140]
 set xtics (2, 8, 32, 128, 512, "2K" 2048, "8K" 8192, "32K" 32768, "128K" 131072, \
     "512K" 524288, "2M" 2097152, "8M" 8388608, "32M" 33554432, "128M" 134217728, \
     "512M" 536870912)

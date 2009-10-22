@@ -1,0 +1,30 @@
+These are my notes for interpreting the results.
+
+I used two laptops for gathering these results.
+
+1) Dirac: (sysctl -r machdep.cpu.brand_string)
+	Intel(R) Core(TM)2 Duo CPU     T7800  @ 2.60GHz
+	4MB L2 cache
+	800MHz Bus Speed
+
+	According to Lenovo:
+	http://www.lenovo.com/psref/pdf/tecbook.pdf
+
+
+	L1 cache - 64KB per core split between data cache (32KB) and
+	instuction cache (32KB)
+
+	L1 data cache - 2x32KB data cache, integrated
+
+	L1 instruction cache - 2x32KB instruction cache, integrated
+
+	L2 cache - size : 2MB or 4MB, full speed, shared between both
+	cores (Intel Advanced Smart Cache)
+
+	L2 cache - data path : 256-bit data path (32 bytes), 64 byte
+	cache line size, 8-way set associative, integrated, unified
+	(on die)
+
+
+
+KNOPPIX_SEQ_DIRAC - 

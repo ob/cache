@@ -23,8 +23,8 @@ unset surf
 set log xy # add z to use log scale for time
 #set log z
 set lmargin 8
-set title "Cache Latency (Linux - Random)"
-splot "< cat -s LINUX_RAND_REBOOT" with lines
+set title "Cache Latency (Linux - Sequential)"
+splot "< cat -s KNOPPIX_SEQ_DIRAC" with lines
 
 # Local Variables: **
 # mode: gnuplot **
