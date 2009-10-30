@@ -10,8 +10,8 @@ typedef	u_int32_t	u32;
 typedef u_int64_t	u64;
 
 #define	SAMPLE		10
-#define	CACHE_MIN	1024
-#define	CACHE_MAX	256 * 1024 * 1024 /* 1 GB! */
+#define	CACHE_MIN	(1024 / sizeof(u32*))		      /* 1K */
+#define	CACHE_MAX	((1024 * 1024 * 1024) / sizeof(u32*)) /* 1 GB! */
 
 /* Getopt */
 static struct option longopts[] = {
@@ -90,8 +90,8 @@ random_access(u32 cache_max)
 	    } while (sec < 1.0);
 
 	    printf("%lu\t%lu\t%.1lf\n",
-		   stride * sizeof(u32),
-		   csize * sizeof(u32),
+		   stride * sizeof(u32*),
+		   csize * sizeof(u32*),
 		   sec*1e9/(steps*SAMPLE*stride*((limit-1)/stride+1)));
 	    fflush(stdout);
 	}
@@ -124,8 +124,8 @@ sequential_access(u32 cache_max)
 	    } while (sec < 1.0);
 
 	    printf("%lu\t%lu\t%.1lf\n",
-		   stride * sizeof(u32),
-		   csize * sizeof(u32),
+		   stride * sizeof(u32*),
+		   csize * sizeof(u32*),
 		   sec*1e9/(steps*SAMPLE*stride*((limit-1)/stride+1)));
 	    fflush(stdout);
 	}
@@ -151,7 +151,7 @@ main(int ac, char **av)
 	    kind = seq_access;
 	    break;
 	case 'b':
-	    cache_size = strtol(optarg, 0, 10) / sizeof(u32);
+	    cache_size = strtol(optarg, 0, 10) / sizeof(u32*);
 	    break;
 	default:
 usage:	    fprintf(stderr, "usage: %s (--random|--sequential) "
@@ -162,23 +162,23 @@ usage:	    fprintf(stderr, "usage: %s (--random|--sequential) "
     }
     if (cache_size < CACHE_MIN) {
 	fprintf(stderr, "%s: buffer needs to be at least %ld\n",
-		av[0], CACHE_MIN * sizeof(u32));
+		av[0], CACHE_MIN * sizeof(u32*));
 	return (1);
     }
     if (cache_size > CACHE_MAX) {
 	fprintf(stderr, "%s: buffer needs to be less than %ld\n",
-		av[0], CACHE_MAX * sizeof(u32));
+		av[0], CACHE_MAX * sizeof(u32*));
 	return (1);
     }
     switch (kind) {
     case rand_access:
 	printf("# doing random access with a max buffer of %ld\n",
-	       cache_size * sizeof(u32));
+	       cache_size * sizeof(u32*));
 	random_access(cache_size);
 	break;
     case seq_access:
 	printf("# doing sequential access with a max buffer of %ld\n",
-	       cache_size * sizeof(u32));
+	       cache_size * sizeof(u32*));
 	sequential_access(cache_size);
 	break;
     default:
