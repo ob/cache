@@ -36,7 +36,7 @@ timestamp(void)
 u32 **
 shuffle(u32 **buffer, u32 stride, u32 max)
 {
-    int i, j, r, n, tmp;
+    u32 i, j, r, n, tmp;
     static int	*indices = NULL;
 
     if (indices == NULL) {
@@ -66,13 +66,27 @@ shuffle(u32 **buffer, u32 stride, u32 max)
      return (&buffer[indices[0]]);
 }
 
+u32 **
+linear(u32 **buffer, u32 stride, u32 max)
+{
+    u32 i, last;
+
+    last = 1;
+    for (i = stride + 1; i <= max; i += stride) {
+	buffer[last] = (u32 *)&buffer[i];
+	last = i;
+    }
+    buffer[max] = 0;
+    return (&buffer[1]);
+}
+
 void
 random_access(u32 cache_max)
 {
     u32 register	i, stride;
     u32	steps, csize, limit;
     double	sec0, sec;
-    u32 **start, **p;
+    u32 register	**start, **p;
 
     for (csize=CACHE_MIN; csize <= cache_max; csize*=2) {
 	for (stride=1; stride <= csize/2; stride=stride*2) {
@@ -82,9 +96,8 @@ random_access(u32 cache_max)
 	    start = shuffle(buffer, stride, limit);
 	    do {
 		sec0 = timestamp();
-		for (i=SAMPLE*stride; i > 0; i--) {
-		    for (p = start; p; p = (u32 **)*p) {}
-		}
+		for (i=SAMPLE*stride; i > 0; i--)
+		    for (p = start; p; p = (u32 **)*p) ;
 		steps++;
 		sec += timestamp() - sec0;
 	    } while (sec < 1.0);
@@ -103,22 +116,22 @@ random_access(u32 cache_max)
 void
 sequential_access(u32 cache_max)
 {
-    u32 register	i, j, stride;
+    u32 i, stride;
     u32 steps, csize, limit;
     double	sec0, sec;
+    u32 **start;
+    register u32 **p;
 
     for (csize=CACHE_MIN; csize <= cache_max; csize*=2) {
 	for (stride=1; stride <= csize/2; stride=stride*2) {
 	    sec = 0.0;
 	    limit = csize - stride + 1;
 	    steps = 0;
+	    start = linear(buffer, stride, limit);
 	    do {
 		sec0 = timestamp();
-		for (i=SAMPLE*stride; i > 0; i--) {
-		    for (j=1; j <= limit; j+=stride) {
-			buffer[j] = buffer[j] + 1;
-		    }
-		}
+		for (i=SAMPLE*stride; i > 0; i--)
+		    for (p = start; p; p = (u32 **)*p) ;
 		steps++;
 		sec += timestamp() - sec0;
 	    } while (sec < 1.0);
