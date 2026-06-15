@@ -2,8 +2,10 @@
 """Infer cache hierarchy parameters from a cache.c data file.
 
 Reads the gnuplot-format TSV (stride, buffer, ns) emitted by cache.c
-and prints the cache levels it can detect, their latencies, line size,
-and L1 associativity.
+and prints inferred cache levels (size + latency range), line size,
+L1 associativity, and TLB miss penalty. Reports ranges and confidence
+instead of single-number summaries, because the underlying measurements
+have real spread.
 """
 import argparse
 import sys
@@ -13,7 +15,7 @@ from collections import defaultdict, Counter
 def parse(path):
     """Return (meta, {buffer_size: {stride: ns}}) sorted by buffer size.
 
-    meta is a dict of header fields: host, date, mode, kind."""
+    meta carries header fields (host, date, mode) and an inferred `kind`."""
     data = defaultdict(dict)
     meta = {}
     with open(path) as f:
@@ -46,37 +48,36 @@ def parse(path):
 
 
 def humanize(n):
-    for unit in ("B", "KB", "MB", "GB"):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:
-            return f"{n} {unit}" if isinstance(n, int) and n == int(n) else f"{n:.1f} {unit}"
-        n //= 1024 if isinstance(n, int) else 1
-        if not isinstance(n, int):
-            n /= 1024
-    return f"{n} TB"
+            return f"{n:g} {unit}"
+        n /= 1024
+    return f"{n:g} PB"
 
 
 def row_peak(rows):
-    """Peak latency in a row, looking only at the rising portion (clips the
-    right-edge collapse-to-L1 from Saavedra's regime 4)."""
+    """Peak latency in a row, clipped to the rising portion (drops the
+    right-edge collapse-to-L1 that Saavedra's regime 4 produces)."""
     strides = sorted(rows)
     lats = [rows[s] for s in strides]
     peak_i = max(range(len(lats)), key=lats.__getitem__)
     return max(lats[: peak_i + 1])
 
 
+def row_floor(rows):
+    return rows[min(rows)]
+
+
 def level_signal(rows, kind):
-    """The per-buffer scalar used to detect cache levels. Random walks make
-    the small-stride floor a clean signal. Sequential walks are streamed by
-    the hardware prefetcher at small stride, so we use the row's peak (worst-
-    case access cost) instead."""
-    if kind == "random":
-        return rows[min(rows)]
-    return row_peak(rows)
+    """The per-buffer scalar used to detect cache-level boundaries. Random
+    walks expose the structure at the small-stride floor; sequential walks
+    are streamed by the prefetcher at small stride, so we use the row peak."""
+    return row_floor(rows) if kind == "random" else row_peak(rows)
 
 
 def find_levels(data, kind, jump=1.4):
-    """Group consecutive buffer sizes; a >jump× rise ends a group. Each group
-    corresponds to a cache level (or DRAM)."""
+    """Group consecutive buffer sizes; a >jump× rise in the signal ends a
+    group. Each group is a cache level (or DRAM)."""
     series = [(b, level_signal(rows, kind)) for b, rows in data.items()]
     groups = [[series[0]]]
     for prev, cur in zip(series, series[1:]):
@@ -87,11 +88,30 @@ def find_levels(data, kind, jump=1.4):
     return groups
 
 
+def group_stats(group, data, kind):
+    """Buffer range and latency range for one level group."""
+    buffers = [b for b, _ in group]
+    sigs = [level_signal(data[b], kind) for b in buffers]
+    return {
+        "min_buf": min(buffers),
+        "max_buf": max(buffers),
+        "lat_lo": min(sigs),
+        "lat_hi": max(sigs),
+        "n": len(buffers),
+    }
+
+
+def level_names(n_groups):
+    if n_groups <= 1:
+        return ["memory"]
+    base = ["L1", "L2", "L3", "L4"]
+    return base[: n_groups - 1] + ["memory"]
+
+
 def line_size(data, l1_max_buf, l2_max_buf):
-    """For each row that lives in L2 (above L1 but within L2), find the
-    smallest stride whose latency reaches 95% of the row's max. That stride
-    is the cache line size (one miss per access from there on). Median across
-    qualifying rows."""
+    """For rows in L2 (above L1 but within L2), the smallest stride whose
+    latency reaches 95% of the row's peak marks the line size (one miss per
+    access from there on). Median across qualifying rows."""
     estimates = []
     for buf, rows in data.items():
         if buf <= 2 * l1_max_buf or buf > l2_max_buf:
@@ -99,7 +119,7 @@ def line_size(data, l1_max_buf, l2_max_buf):
         strides = sorted(rows)
         lats = [rows[s] for s in strides]
         if max(lats) / min(lats) < 1.15:
-            continue  # too flat to find a knee
+            continue
         peak = max(range(len(lats)), key=lats.__getitem__)
         rising_s, rising_l = strides[: peak + 1], lats[: peak + 1]
         thresh = 0.95 * max(rising_l)
@@ -114,8 +134,8 @@ def line_size(data, l1_max_buf, l2_max_buf):
 
 
 def l1_associativity(data, l1_lat, l1_max_buf):
-    """For rows above L1, the right-edge collapse to L1 latency happens at the
-    stride where the walked set fits in one way. a = buf / collapse_stride."""
+    """For rows above L1, the right-edge collapse to ≈L1 latency happens at
+    the stride where the walked set fits in one way. a = buf / stride."""
     estimates = []
     for buf, rows in data.items():
         if buf <= l1_max_buf:
@@ -133,11 +153,123 @@ def l1_associativity(data, l1_lat, l1_max_buf):
     return a, n
 
 
-def level_names(n_groups):
-    if n_groups <= 1:
-        return ["memory"]
-    base = ["L1", "L2", "L3", "L4"]
-    return base[: n_groups - 1] + ["memory"]
+def tlb_penalty(data, dram_min_buf):
+    """For the smallest buffer in DRAM region: row peak − row floor estimates
+    the per-access cost of a TLB miss. Smaller buffers in DRAM expose this
+    most cleanly (TLB pressure rises quickly with buffer; the L2-miss cost
+    floor is roughly constant across the region)."""
+    if dram_min_buf is None or dram_min_buf not in data:
+        return None
+    rows = data[dram_min_buf]
+    return row_peak(rows) - row_floor(rows)
+
+
+def is_suspect(prev_stats, this_stats, dram_stats):
+    """A middle level is suspect if it has very few rows and its latency is
+    much closer to a cache hit than to DRAM — likely TLB pressure or a noisy
+    boundary, not a real cache level."""
+    if this_stats["n"] >= 3:
+        return False
+    if dram_stats is None:
+        return False
+    gap_below = this_stats["lat_lo"] / max(prev_stats["lat_hi"], 1e-9)
+    gap_to_dram = dram_stats["lat_lo"] / max(this_stats["lat_hi"], 1e-9)
+    return gap_below < 4 and gap_to_dram > 2
+
+
+def report(args, meta, data):
+    kind = meta["kind"]
+    groups = find_levels(data, kind)
+    names = level_names(len(groups))
+    stats = [group_stats(g, data, kind) for g in groups]
+
+    print(args.file)
+    bits = [meta[k] for k in ("host", "date", "mode") if k in meta]
+    if bits:
+        print("  " + "  ·  ".join(bits))
+    print()
+
+    has_dram = names[-1] == "memory"
+    dram_stats = stats[-1] if has_dram else None
+
+    # Flag suspect middle levels
+    flags = [""] * len(stats)
+    for i in range(1, len(stats) - 1):  # skip L1 (first) and memory (last)
+        if is_suspect(stats[i - 1], stats[i], dram_stats):
+            flags[i] = "?"
+
+    cyc_hdr = f"  {'cycles':>13s}" if args.ghz else ""
+    print(f"  {'level':6s}  {'buffer range':>16s}  {'latency (ns)':>14s}{cyc_hdr}")
+    print(f"  {'-'*6}  {'-'*16}  {'-'*14}" + ("  " + "-" * 13 if args.ghz else ""))
+
+    for name, st, flag in zip(names, stats, flags):
+        lbl = name + flag
+        buf_str = (humanize(st["min_buf"]) if st["min_buf"] == st["max_buf"]
+                   else f"{humanize(st['min_buf'])} – {humanize(st['max_buf'])}")
+        lat_str = (f"{st['lat_lo']:.1f}" if st["lat_lo"] == st["lat_hi"]
+                   else f"{st['lat_lo']:.1f} – {st['lat_hi']:.1f}")
+        cyc_str = ""
+        if args.ghz:
+            lo = st["lat_lo"] * args.ghz
+            hi = st["lat_hi"] * args.ghz
+            val = f"{lo:.0f}" if lo == hi else f"{lo:.0f} – {hi:.0f}"
+            cyc_str = f"  {val:>13s}"
+        print(f"  {lbl:6s}  {buf_str:>16s}  {lat_str:>14s}{cyc_str}")
+
+    print()
+    print("  derived")
+
+    l1_max = stats[0]["max_buf"] if names[0] == "L1" else None
+    l1_lat = stats[0]["lat_lo"] if names[0] == "L1" else None
+    l2_max = next((st["max_buf"] for n, st in zip(names, stats) if n == "L2"), None)
+    dram_min = dram_stats["min_buf"] if dram_stats and len(stats) > 1 else None
+
+    nothing_derived = True
+
+    if kind == "random" and l1_max and l2_max:
+        ls, n = line_size(data, l1_max, l2_max)
+        if ls and n >= 3:
+            print(f"    line size           {ls} B            (consensus: {n} rows)")
+            nothing_derived = False
+
+    if kind == "random" and l1_max and l1_lat:
+        a, n = l1_associativity(data, l1_lat, l1_max)
+        if a and n >= 4:
+            print(f"    L1 associativity    {a}-way           (consensus: {n} rows)")
+            nothing_derived = False
+        elif a:
+            print(f"    L1 associativity    {a}-way  (low confidence: only {n} rows)")
+            nothing_derived = False
+
+    if kind == "random" and dram_min:
+        pen = tlb_penalty(data, dram_min)
+        if pen and pen > 5:
+            print(f"    TLB miss penalty   ~{pen:.0f} ns          (at {humanize(dram_min)} buffer)")
+            nothing_derived = False
+
+    if nothing_derived:
+        if kind == "random":
+            print("    (not enough resolution in this dataset)")
+        else:
+            print("    (line size, associativity, TLB need random-access data;")
+            print("     the hardware prefetcher hides them in sequential walks)")
+
+    # Notes
+    notes = []
+    if any(f == "?" for f in flags):
+        notes.append("levels marked '?' are weak signals — possibly TLB pressure,")
+        notes.append("noisy plateaus, or boundary effects, not separate caches")
+    # Boundary contamination note for inner levels
+    for name, st in zip(names, stats):
+        if name in ("L2", "L3") and st["lat_hi"] / st["lat_lo"] > 1.5:
+            notes.append(f"{name} latency floor ({st['lat_lo']:.1f} ns) is at the previous-level boundary;")
+            notes.append(f"  typical {name} hit cost in mid-region is closer to ~{(st['lat_lo']+st['lat_hi'])/2:.0f} ns")
+            break
+    if notes:
+        print()
+        print("  notes")
+        for n in notes:
+            print(f"    {n}")
 
 
 def main():
@@ -150,51 +282,7 @@ def main():
     meta, data = parse(args.file)
     if not data:
         sys.exit(f"{args.file}: no data parsed")
-
-    kind = meta["kind"]
-    groups = find_levels(data, kind)
-    names = level_names(len(groups))
-
-    print(f"{args.file}")
-    bits = []
-    if "host" in meta:
-        bits.append(f"host: {meta['host']}")
-    if "date" in meta:
-        bits.append(meta["date"])
-    if meta.get("mode"):
-        bits.append(meta["mode"])
-    if bits:
-        print("  " + " · ".join(bits))
-    print()
-
-    cyc_col = f"  {'cycles':>7s}" if args.ghz else ""
-    print(f"  {'level':6s}  {'fits ≤':>10s}  {'latency':>10s}{cyc_col}")
-    print(f"  {'-'*6}  {'-'*10}  {'-'*10}" + ("  " + "-"*7 if args.ghz else ""))
-
-    l1_max = l1_lat = l2_max = None
-    for name, group in zip(names, groups):
-        lat = min(l for _, l in group)
-        max_buf = max(b for b, _ in group)
-        size_str = humanize(max_buf) if name != "memory" else "—"
-        cyc_str = f"  {lat * args.ghz:>7.1f}" if args.ghz else ""
-        print(f"  {name:6s}  {size_str:>10s}  {lat:>7.1f} ns{cyc_str}")
-        if name == "L1":
-            l1_max, l1_lat = max_buf, lat
-        elif name == "L2":
-            l2_max = max_buf
-
-    print()
-    if kind == "random" and l1_max and l2_max:
-        ls, n = line_size(data, l1_max, l2_max)
-        if ls:
-            print(f"  line size          {ls} B  (consensus across {n} rows)")
-    if kind == "random" and l1_max and l1_lat:
-        a, n = l1_associativity(data, l1_lat, l1_max)
-        if a:
-            print(f"  L1 associativity   {a}-way  (consensus across {n} rows)")
-    if kind != "random":
-        print("  (line size & associativity need random-access data;")
-        print("   the hardware prefetcher hides them in sequential walks)")
+    report(args, meta, data)
 
 
 if __name__ == "__main__":
