@@ -226,19 +226,22 @@ def report(args, meta, data):
 
     nothing_derived = True
 
+    def plural(n, word):
+        return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
     if kind == "random" and l1_max and l2_max:
         ls, n = line_size(data, l1_max, l2_max)
         if ls and n >= 3:
-            print(f"    line size           {ls} B            (consensus: {n} rows)")
+            print(f"    line size           {ls} B            (consensus: {plural(n, 'row')})")
             nothing_derived = False
 
     if kind == "random" and l1_max and l1_lat:
         a, n = l1_associativity(data, l1_lat, l1_max)
         if a and n >= 4:
-            print(f"    L1 associativity    {a}-way           (consensus: {n} rows)")
+            print(f"    L1 associativity    {a}-way           (consensus: {plural(n, 'row')})")
             nothing_derived = False
         elif a:
-            print(f"    L1 associativity    {a}-way  (low confidence: only {n} rows)")
+            print(f"    L1 associativity    {a}-way  (low confidence: only {plural(n, 'row')})")
             nothing_derived = False
 
     if kind == "random" and dram_min:

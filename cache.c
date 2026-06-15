@@ -72,6 +72,8 @@ random_access(u32 cache_max, FILE *out)
     u32 register	**start, **p;
 
     for (csize=CACHE_MIN; csize <= cache_max; csize*=2) {
+	fprintf(stderr, "  buffer %lu... ", csize * sizeof(u32*));
+	fflush(stderr);
 	for (stride=1; stride <= csize/2; stride=stride*2) {
 	    sec = 0.0;
 	    limit = csize - stride + 1;
@@ -93,6 +95,7 @@ random_access(u32 cache_max, FILE *out)
 	}
 	fprintf(out, "\n\n");
 	fflush(out);
+	fprintf(stderr, "done\n");
     }
 }
 
