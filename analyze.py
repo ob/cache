@@ -272,17 +272,130 @@ def report(args, meta, data):
             print(f"    {n}")
 
 
+def plot_title(file_path, meta):
+    bits = []
+    if "host" in meta:
+        bits.append(meta["host"])
+    if meta.get("kind") in ("random", "sequential"):
+        bits.append(meta["kind"])
+    return " · ".join(bits) if bits else file_path
+
+
+def plot_2d(data, meta, file_path, output, n_lines=10):
+    """One line per buffer size: stride vs latency."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    buffers = sorted(data)
+    if len(buffers) > n_lines:
+        idx = np.linspace(0, len(buffers) - 1, n_lines).round().astype(int)
+        buffers = [buffers[i] for i in idx]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    cmap = plt.get_cmap("plasma")
+    for i, buf in enumerate(buffers):
+        rows = data[buf]
+        strides = sorted(rows)
+        lats = [rows[s] for s in strides]
+        color = cmap(i / max(1, len(buffers) - 1))
+        ax.plot(strides, lats, marker=".", linewidth=1.3,
+                color=color, label=humanize(buf))
+
+    ax.set_xscale("log", base=2)
+    ax.set_xlabel("Stride (bytes)")
+    ax.set_ylabel("Latency (ns)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(loc="best", title="Buffer size", fontsize=8, ncol=2)
+    ax.set_title(f"Cache latency — {plot_title(file_path, meta)}")
+    fig.tight_layout()
+    fig.savefig(output, dpi=110)
+    print(f"wrote {output}")
+
+
+def plot_3d(data, meta, file_path, output):
+    """Surface plot: stride × buffer × latency."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    buffers = sorted(data)
+    all_strides = sorted({s for rows in data.values() for s in rows})
+
+    Z = np.full((len(buffers), len(all_strides)), np.nan)
+    for i, buf in enumerate(buffers):
+        for j, stride in enumerate(all_strides):
+            if stride in data[buf]:
+                Z[i, j] = data[buf][stride]
+
+    X, Y = np.meshgrid(all_strides, buffers)
+
+    fig = plt.figure(figsize=(11, 7.5))
+    ax = fig.add_subplot(111, projection="3d")
+    surf = ax.plot_surface(np.log2(X), np.log2(Y), Z, cmap="plasma",
+                           edgecolor="white", linewidth=0.25, alpha=0.95,
+                           antialiased=True)
+
+    def log_ticks(values, label_fn):
+        return [np.log2(v) for v in values], [label_fn(v) for v in values]
+
+    smax = max(all_strides)
+    stride_marks = [v for v in (8, 128, 2048, 32768, 524288, 8388608,
+                                134217728, 1073741824) if v <= smax]
+    sx, sxl = log_ticks(stride_marks, humanize)
+    ax.set_xticks(sx)
+    ax.set_xticklabels(sxl, fontsize=8)
+
+    bmax = max(buffers)
+    buf_marks = [v for v in (8192, 131072, 2097152, 33554432, 536870912)
+                 if v <= bmax]
+    by, byl = log_ticks(buf_marks, humanize)
+    ax.set_yticks(by)
+    ax.set_yticklabels(byl, fontsize=8)
+
+    ax.set_xlabel("Stride", labelpad=8)
+    ax.set_ylabel("Buffer size", labelpad=8)
+    ax.set_zlabel("Latency (ns)", labelpad=4)
+    ax.set_title(f"Cache latency — {plot_title(file_path, meta)}")
+    ax.view_init(elev=22, azim=-115)
+
+    fig.colorbar(surf, shrink=0.5, aspect=12, pad=0.08, label="ns")
+    fig.tight_layout()
+    fig.savefig(output, dpi=110)
+    print(f"wrote {output}")
+
+
+def default_output(input_path, plot_kind):
+    import os
+    base = os.path.splitext(os.path.basename(input_path))[0]
+    return f"{base}.{plot_kind}.png"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("file")
     ap.add_argument("--ghz", type=float,
                     help="CPU clock in GHz; adds a cycle-count column")
+    ap.add_argument("--plot", choices=["2d", "3d"],
+                    help="produce a plot instead of (in addition to) the report")
+    ap.add_argument("-o", "--output",
+                    help="plot output file (default: <input>.<plot>.png)")
     args = ap.parse_args()
 
     meta, data = parse(args.file)
     if not data:
         sys.exit(f"{args.file}: no data parsed")
-    report(args, meta, data)
+
+    if args.plot:
+        out = args.output or default_output(args.file, args.plot)
+        if args.plot == "2d":
+            plot_2d(data, meta, args.file, out)
+        else:
+            plot_3d(data, meta, args.file, out)
+    else:
+        report(args, meta, data)
 
 
 if __name__ == "__main__":
