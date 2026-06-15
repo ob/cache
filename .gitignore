@@ -1,0 +1,3 @@
+cache
+*.dSYM/
+__pycache__/
