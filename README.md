@@ -7,13 +7,15 @@ buffers, and a Python post-processor that reads the resulting numbers
 and infers the cache hierarchy of the machine they were taken on.
 
 I first saw the technique used for generating these latency numbers in
-exercise 5.2 on page 476 of
-[Computer Architecture: A Quantitative Approach](http://www.amazon.com/gp/product/0123704901)
+exercise 5.2 on page 476 of [Computer Architecture: A Quantitative
+Approach](http://www.amazon.com/gp/product/0123704901).  The exercise
+asks you to write a program to walk a contiguous region of memory
+using different strides and time how long accessing the memory takes.
 
-## Theory
-
-The idea comes from the [Ph.D. dissertation](http://portal.acm.org/citation.cfm?id=170337) of
-Rafael Héctor Saavedra‑Barrera:
+The idea for this exercise comes from the
+[Ph.D. dissertation](http://portal.acm.org/citation.cfm?id=170337) of
+Rafael Héctor Saavedra‑Barrera, where he describes the following
+approach:
 
 > Assume that a machine has a cache capable of holding D 4‑byte
 > words, a line size of b words, and an associativity
